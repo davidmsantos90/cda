@@ -18,7 +18,7 @@
 
     <jaxrs:server address="/cda-pentaho" id="cdaService">
         <jaxrs:serviceBeans>
-            <bean id="cda.api" class="pt.webdetails.cda.CdaUtils" />
+            <bean id="cda.api" class="pt.webdetails.cda_pentaho.CdaUtils" />
         </jaxrs:serviceBeans>
     </jaxrs:server>
 
