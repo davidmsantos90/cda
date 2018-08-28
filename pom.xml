@@ -354,8 +354,14 @@
         <artifactId>dom4j</artifactId>
         <version>${dom4j.version}</version>
       </dependency>
+      <dependency>
+        <groupId>org.apache.cxf</groupId>
+        <artifactId>cxf-rt-rs-security-cors</artifactId>
+        <version>${cxf.karaf.version}</version> <!-- TODO change with variable 3.2.5 ${cxf.karaf.version}-->
+      </dependency>
     </dependencies>
   </dependencyManagement>
+
   <profiles>
     <profile>
       <id>aggregate-reporting</id>
