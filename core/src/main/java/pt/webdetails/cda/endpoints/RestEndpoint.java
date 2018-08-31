@@ -1,5 +1,5 @@
 /*!
- * Copyright 2002 - 2017 Webdetails, a Hitachi Vantara company. All rights reserved.
+ * Copyright 2002 - 2018 Webdetails, a Hitachi Vantara company. All rights reserved.
  *
  * This software was developed by Webdetails and is provided under the terms
  * of the Mozilla Public License, Version 2.0, or any later version. You may not use
@@ -10,24 +10,20 @@
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. Please refer to
  * the license for the specific language governing your rights and limitations.
  */
-
 package pt.webdetails.cda.endpoints;
 
-
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
 import pt.webdetails.cda.CdaCoreService;
 import pt.webdetails.cda.exporter.ExportOptions;
 import pt.webdetails.cda.exporter.ExportedQueryResult;
+import pt.webdetails.cda.exporter.ExporterException;
+import pt.webdetails.cda.exporter.UnsupportedExporterException;
 import pt.webdetails.cda.utils.DoQueryParameters;
 import pt.webdetails.cpf.PluginEnvironment;
-import pt.webdetails.cpf.Util;
 import pt.webdetails.cpf.repository.api.IReadAccess;
 import pt.webdetails.cpf.utils.CharsetHelper;
 import pt.webdetails.cpf.utils.MimeTypes;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.FormParam;
@@ -36,23 +32,26 @@ import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Context;
+import javax.ws.rs.core.HttpHeaders;
+import javax.ws.rs.core.Response;
+import java.io.ByteArrayOutputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static javax.ws.rs.core.MediaType.APPLICATION_FORM_URLENCODED;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 import static javax.ws.rs.core.MediaType.APPLICATION_XML;
+import static pt.webdetails.cda.utils.DoQueryParameters.DEFAULT_DATA_ACCESS_ID;
+import static pt.webdetails.cda.utils.DoQueryParameters.DEFAULT_OUTPUT_TYPE;
 
-@Path( "/cda/api/utils" )
 /**
  * @deprecated
  */
+@Path( "/cda/api/utils" )
 public class RestEndpoint {
   private static String getEncoding() {
     return CharsetHelper.getEncoding();
@@ -61,131 +60,165 @@ public class RestEndpoint {
   @POST
   @Path( "/doQuery" )
   @Consumes( { APPLICATION_XML, APPLICATION_JSON, APPLICATION_FORM_URLENCODED } )
-  public void doQueryPost( @FormParam( "path" ) String path,
-                           @FormParam( "solution" ) String solution,
-                           @FormParam( "file" ) String file,
-                           @DefaultValue( "json" ) @FormParam( "outputType" ) String outputType,
-                           @DefaultValue( "1" ) @FormParam( "outputIndexId" ) int outputIndexId,
-                           @DefaultValue( "<blank>" ) @FormParam( "dataAccessId" ) String dataAccessId,
-                           @DefaultValue( "false" ) @FormParam( "bypassCache" ) Boolean bypassCache,
-                           @DefaultValue( "false" ) @FormParam( "paginateQuery" ) Boolean paginateQuery,
-                           @DefaultValue( "0" ) @FormParam( "pageSize" ) int pageSize,
-                           @DefaultValue( "0" ) @FormParam( "pageStart" ) int pageStart,
-                           @DefaultValue( "false" ) @FormParam( "wrapItUp" ) Boolean wrapItUp,
-                           @FormParam( "sortBy" ) List<String> sortBy,
-                           @DefaultValue( "<blank>" ) @FormParam( "jsonCallback" ) String jsonCallback,
-                           @Context HttpServletResponse servletResponse,
-                           @Context HttpServletRequest servletRequest ) throws Exception {
-    this.doQuery( path, solution, file, outputType, outputIndexId, dataAccessId, bypassCache, paginateQuery,
-        pageSize, pageStart, wrapItUp, sortBy, jsonCallback, servletResponse, servletRequest );
+  public Response doQueryPost( @FormParam( "path" ) String path,
+                               @FormParam( "solution" ) String solution,
+                               @FormParam( "file" ) String file,
+                               @DefaultValue( "json" ) @FormParam( "outputType" ) String outputType,
+                               @DefaultValue( "1" ) @FormParam( "outputIndexId" ) int outputIndexId,
+                               @DefaultValue( "<blank>" ) @FormParam( "dataAccessId" ) String dataAccessId,
+                               @DefaultValue( "false" ) @FormParam( "bypassCache" ) Boolean bypassCache,
+                               @DefaultValue( "false" ) @FormParam( "paginateQuery" ) Boolean paginateQuery,
+                               @DefaultValue( "0" ) @FormParam( "pageSize" ) int pageSize,
+                               @DefaultValue( "0" ) @FormParam( "pageStart" ) int pageStart,
+                               @DefaultValue( "false" ) @FormParam( "wrapItUp" ) Boolean wrapItUp,
+                               @FormParam( "sortBy" ) List<String> sortBy,
+                               @DefaultValue( "<blank>" ) @FormParam( "jsonCallback" ) String jsonCallback ) {
+    try {
+      final DoQueryParameters queryParams = getQueryParameters( path, solution, file, outputType, outputIndexId,
+              dataAccessId, bypassCache, paginateQuery, pageSize, pageStart, wrapItUp, sortBy, jsonCallback );
+
+      return this.doQuery( queryParams );
+    } catch ( Exception ex ) {
+      return Response.serverError().entity( ex ).build();
+    }
   }
 
   @GET
   @Path( "/doQuery" )
   @Consumes( { APPLICATION_XML, APPLICATION_JSON, APPLICATION_FORM_URLENCODED } )
-  public void doQueryGet( @QueryParam( "path" ) String path,
-                          @QueryParam( "solution" ) String solution,
-                          @QueryParam( "file" ) String file,
-                          @DefaultValue( "json" ) @QueryParam( "outputType" ) String outputType,
-                          @DefaultValue( "1" ) @QueryParam( "outputIndexId" ) int outputIndexId,
-                          @DefaultValue( "<blank>" ) @QueryParam( "dataAccessId" ) String dataAccessId,
-                          @DefaultValue( "false" ) @QueryParam( "bypassCache" ) Boolean bypassCache,
-                          @DefaultValue( "false" ) @QueryParam( "paginateQuery" ) Boolean paginateQuery,
-                          @DefaultValue( "0" ) @QueryParam( "pageSize" ) int pageSize,
-                          @DefaultValue( "0" ) @QueryParam( "pageStart" ) int pageStart,
-                          @DefaultValue( "false" ) @QueryParam( "wrapItUp" ) Boolean wrapItUp,
-                          @QueryParam( "sortBy" ) List<String> sortBy,
-                          @DefaultValue( "<blank>" ) @QueryParam( "jsonCallback" ) String jsonCallback,
-                          @Context HttpServletResponse servletResponse,
-                          @Context HttpServletRequest servletRequest ) throws Exception {
-    this.doQuery( path, solution, file, outputType, outputIndexId, dataAccessId, bypassCache, paginateQuery,
-        pageSize, pageStart, wrapItUp, sortBy, jsonCallback, servletResponse, servletRequest );
-  }
+  public Response doQueryGet( @QueryParam( "path" ) String path,
+                              @QueryParam( "solution" ) String solution,
+                              @QueryParam( "file" ) String file,
+                              @DefaultValue( "json" ) @QueryParam( "outputType" ) String outputType,
+                              @DefaultValue( "1" ) @QueryParam( "outputIndexId" ) int outputIndexId,
+                              @DefaultValue( "<blank>" ) @QueryParam( "dataAccessId" ) String dataAccessId,
+                              @DefaultValue( "false" ) @QueryParam( "bypassCache" ) Boolean bypassCache,
+                              @DefaultValue( "false" ) @QueryParam( "paginateQuery" ) Boolean paginateQuery,
+                              @DefaultValue( "0" ) @QueryParam( "pageSize" ) int pageSize,
+                              @DefaultValue( "0" ) @QueryParam( "pageStart" ) int pageStart,
+                              @DefaultValue( "false" ) @QueryParam( "wrapItUp" ) Boolean wrapItUp,
+                              @QueryParam( "sortBy" ) List<String> sortBy,
+                              @DefaultValue( "<blank>" ) @QueryParam( "jsonCallback" ) String jsonCallback ) {
+    try {
+      final DoQueryParameters queryParams = getQueryParameters( path, solution, file, outputType, outputIndexId,
+              dataAccessId, bypassCache, paginateQuery, pageSize, pageStart, wrapItUp, sortBy, jsonCallback );
 
-  private void doQuery( String path, String solution, String file, String outputType, int outputIndexId,
-                        String dataAccessId, Boolean bypassCache, Boolean paginateQuery, int pageSize, int pageStart, Boolean wrapItUp,
-                        List<String> sortBy, String jsonCallback, HttpServletResponse servletResponse, HttpServletRequest servletRequest ) throws Exception {
-
-    DoQueryParameters queryParams = new DoQueryParameters( path, solution, file );
-    queryParams.setBypassCache( bypassCache );
-    queryParams.setDataAccessId( dataAccessId );
-    queryParams.setOutputIndexId( outputIndexId );
-    queryParams.setOutputType( outputType );
-    queryParams.setPageSize( pageSize );
-    queryParams.setPageStart( pageStart );
-    queryParams.setPaginateQuery( paginateQuery );
-    queryParams.setSortBy( sortBy );
-    queryParams.setWrapItUp( wrapItUp );
-    queryParams.setJsonCallback( jsonCallback );
-    CdaCoreService coreService = getCoreService();
-    if ( wrapItUp ) {
-      writeOut( servletResponse.getOutputStream(), coreService.wrapQuery( queryParams ) );
-    } else {
-      coreService.doQuery( queryParams ).writeResponse( servletResponse );
+      return this.doQuery( queryParams );
+    } catch ( Exception ex ) {
+      return Response.serverError().entity( ex ).build();
     }
   }
+
+  private Response doQuery( DoQueryParameters queryParameters ) throws Exception {
+    final CdaCoreService coreService = getCoreService();
+
+    if ( queryParameters.isWrapItUp() ) {
+      return buildOkResponse( coreService.wrapQuery( queryParameters ) );
+    } else {
+      return buildOkResponse( coreService.doQuery( queryParameters ) );
+    }
+  }
+
 
   @GET
   @Path( "/unwrapQuery" )
   @Consumes( { APPLICATION_XML, APPLICATION_JSON } )
-  public void unwrapQuery( @QueryParam( "path" ) String path,
-                           @QueryParam( "solution" ) String solution,
-                           @QueryParam( "file" ) String file,
-                           @QueryParam( "uuid" ) String uuid,
-                           @Context HttpServletResponse servletResponse,
-                           @Context HttpServletRequest servletRequest ) throws Exception {
-    CdaCoreService coreService = getCoreService();
-    DoQueryParameters params = new DoQueryParameters( path, solution, file );
-    coreService.unwrapQuery( params.getPath(), uuid ).writeResponse( servletResponse );
+  public Response unwrapQuery( @QueryParam( "path" ) String path,
+                               @QueryParam( "solution" ) String solution,
+                               @QueryParam( "file" ) String file,
+                               @QueryParam( "uuid" ) String uuid ) {
+    try {
+      final DoQueryParameters parameters = getQueryParameters( path, solution, file );
+      final ExportedQueryResult result = this.unwrapQuery( parameters, uuid );
+
+      return buildOkResponse( result );
+    } catch ( Exception ex ) {
+      return Response.serverError().entity( ex ).build();
+    }
+
+  }
+
+  private ExportedQueryResult unwrapQuery( DoQueryParameters parameters, String uuid ) throws Exception {
+    final String cdaSettingsPath = parameters.getPath();
+
+    final CdaCoreService coreService = getCoreService();
+    return coreService.unwrapQuery( cdaSettingsPath, uuid );
   }
 
   @GET
   @Path( "/listQueries" )
   @Consumes( { APPLICATION_XML, APPLICATION_JSON, APPLICATION_FORM_URLENCODED } )
-  public void listQueries( @QueryParam( "path" ) String path,
-                           @QueryParam( "solution" ) String solution,
-                           @QueryParam( "file" ) String file,
-                           @DefaultValue( "json" ) @QueryParam( "outputType" ) String outputType,
-                           @Context HttpServletResponse servletResponse,
-                           @Context HttpServletRequest servletRequest ) throws Exception {
-    CdaCoreService coreService = getCoreService();
-    DoQueryParameters params = new DoQueryParameters( path, solution, file );
-    ExportedQueryResult result = coreService.listQueries( params.getPath(), getSimpleExportOptions( outputType ) );
-    result.writeResponse( servletResponse );
+  public Response listQueries( @QueryParam( "path" ) String path,
+                               @QueryParam( "solution" ) String solution,
+                               @QueryParam( "file" ) String file,
+                               @DefaultValue( "json" ) @QueryParam( "outputType" ) String outputType ) {
+    try {
+      final DoQueryParameters parameters = getQueryParameters( path, solution, file, outputType );
+      final ExportedQueryResult result = this.listQueries( parameters );
+
+      return buildOkResponse( result );
+    } catch ( Exception ex ) {
+      return Response.serverError().entity( ex ).build();
+    }
+  }
+
+  private ExportedQueryResult listQueries( DoQueryParameters parameters ) throws Exception {
+    final String cdaSettingsPath = parameters.getPath();
+    final ExportOptions exportOptions = getSimpleExportOptions( parameters.getOutputType() );
+
+    final CdaCoreService coreService = getCoreService();
+    return coreService.listQueries( cdaSettingsPath, exportOptions );
   }
 
   @GET
   @Path( "/listParameters" )
   @Consumes( { APPLICATION_XML, APPLICATION_JSON, APPLICATION_FORM_URLENCODED } )
-  public void listParameters( @QueryParam( "path" ) String path,
-                              @QueryParam( "solution" ) String solution,
-                              @QueryParam( "file" ) String file,
-                              @DefaultValue( "json" ) @QueryParam( "outputType" ) String outputType,
-                              @DefaultValue( "<blank>" ) @QueryParam( "dataAccessId" ) String dataAccessId,
-                              @Context HttpServletResponse servletResponse,
-                              @Context HttpServletRequest servletRequest ) throws Exception {
+  public Response listParameters( @QueryParam( "path" ) String path,
+                                  @QueryParam( "solution" ) String solution,
+                                  @QueryParam( "file" ) String file,
+                                  @DefaultValue( "json" ) @QueryParam( "outputType" ) String outputType,
+                                  @DefaultValue( "<blank>" ) @QueryParam( "dataAccessId" ) String dataAccessId ) {
+    try {
+      final DoQueryParameters parameters = getQueryParameters( path, solution, file, outputType, dataAccessId );
+      final ExportedQueryResult result = this.listParameters( parameters );
 
-    CdaCoreService coreService = getCoreService();
-    DoQueryParameters params = new DoQueryParameters( path, solution, file );
-    ExportedQueryResult result =
-      coreService.listParameters( params.getPath(), dataAccessId, getSimpleExportOptions( outputType ) );
-    result.writeResponse( servletResponse );
+      return buildOkResponse( result );
+    } catch ( Exception ex ) {
+      return Response.serverError().entity( ex ).build();
+    }
   }
 
+  private ExportedQueryResult listParameters( DoQueryParameters queryParameters ) throws Exception {
+    final String cdaSettingsPath = queryParameters.getPath();
+    final String dataAccessId = queryParameters.getDataAccessId();
+    final ExportOptions exportOptions = getSimpleExportOptions( queryParameters.getOutputType() );
+
+    final CdaCoreService coreService = getCoreService();
+    return coreService.listParameters( cdaSettingsPath, dataAccessId, exportOptions );
+  }
 
   @GET
   @Path( "/getCdaList" )
   @Consumes( { APPLICATION_XML, APPLICATION_JSON } )
-  public void getCdaList(
-    @QueryParam( "path" ) String path,
-    @QueryParam( "solution" ) String solution,
-    @QueryParam( "file" ) String file,
-    @DefaultValue( "json" ) @QueryParam( "outputType" ) String outputType,
-    @Context HttpServletResponse servletResponse, @Context HttpServletRequest servletRequest ) throws Exception {
+  public Response getCdaList( @QueryParam( "path" ) String path,
+                              @QueryParam( "solution" ) String solution,
+                              @QueryParam( "file" ) String file,
+                              @DefaultValue( "json" ) @QueryParam( "outputType" ) String outputType ) {
+    try {
+      final DoQueryParameters queryParameters = getQueryParameters( path, solution, file, outputType );
+      final ExportedQueryResult cdaListResult = this.getCdaList( queryParameters );
 
-    CdaCoreService coreService = getCoreService();
-    ExportedQueryResult result = coreService.getCdaList( getSimpleExportOptions( outputType ) );
-    result.writeResponse( servletResponse );
+      return buildOkResponse( cdaListResult );
+    } catch( Exception ex ) {
+      return Response.serverError().entity( ex ).build();
+    }
+  }
+
+  private ExportedQueryResult getCdaList( DoQueryParameters queryParameters ) throws UnsupportedExporterException {
+    final ExportOptions exportOptions = getSimpleExportOptions( queryParameters.getOutputType() );
+
+    final CdaCoreService coreService = getCoreService();
+    return coreService.getCdaList( exportOptions );
   }
 
   private ExportOptions getSimpleExportOptions( final String outputType ) {
@@ -196,41 +229,84 @@ public class RestEndpoint {
       }
 
       public Map<String, String> getExtraSettings() {
-        return Collections.<String, String>emptyMap();
+        return Collections.emptyMap();
       }
     };
   }
 
   @GET
   @Path( "/getCssResource" )
-  @Produces( "text/css" )
+  @Produces( MimeTypes.CSS )
   @Consumes( { APPLICATION_XML, APPLICATION_JSON } )
-  public void getCssResource( @QueryParam( "resource" ) String resource,
-                              @Context HttpServletResponse servletResponse, @Context HttpServletRequest servletRequest )
-    throws Exception {
-    getCssResource( servletResponse.getOutputStream(), resource );
+  public Response getCssResource( @QueryParam( "resource" ) String resource ) {
+    try {
+      final String cssResource = getResource( resource );
+
+      return buildOkResponse( cssResource );
+    } catch ( IOException ioe ) {
+      return Response.serverError().entity( ioe ).build();
+    }
   }
 
   @GET
   @Path( "/getJsResource" )
   @Produces( MimeTypes.JAVASCRIPT )
   @Consumes( { APPLICATION_XML, APPLICATION_JSON } )
-  public void getJsResource(
-    @QueryParam( "resource" ) String resource,
-    @Context HttpServletResponse servletResponse,
-    @Context HttpServletRequest servletRequest ) throws Exception {
+  public Response getJsResource( @QueryParam( "resource" ) String resource ) {
+    try {
+      final String jsResource = getResource( resource );
 
-    getJsResource( servletResponse.getOutputStream(), resource );
+      return buildOkResponse( jsResource );
+    } catch ( IOException ioe ) {
+      return Response.serverError().entity( ioe ).build();
+    }
+  }
+
+  private String getResource( String resource ) throws IOException {
+    final IReadAccess repositoryAccess = getRepositoryAccess();
+
+    if ( !repositoryAccess.fileExists( resource ) ) {
+      throw new FileNotFoundException( "Resource '" + resource + "' not found." );
+    }
+
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+    InputStream resourceInputStream = null;
+    try {
+      resourceInputStream = repositoryAccess.getFileInputStream( resource );
+      IOUtils.copy( resourceInputStream, out );
+    } finally {
+      IOUtils.closeQuietly( resourceInputStream );
+    }
+
+    return new String( out.toByteArray(), getEncoding() );
+  }
+
+  private Response buildOkResponse( String result ) {
+    return Response.ok( result ).encoding( getEncoding() ).build();
+  }
+
+  private Response buildOkResponse( ExportedQueryResult result ) throws ExporterException {
+    final String contentType = result.getContentType();
+    final String contentDisposition = result.getContentDisposition();
+
+    return Response.ok( result.asString() )
+            .header( HttpHeaders.CONTENT_TYPE, contentType )
+            .header( HttpHeaders.CONTENT_DISPOSITION, contentDisposition )
+            .build();
+  }
+
+  private IReadAccess getRepositoryAccess() {
+    return PluginEnvironment.env().getContentAccessFactory().getUserContentAccess( "/" );
   }
 
   @GET
   @Path( "/listDataAccessTypes" )
   @Produces( MimeTypes.JSON )
   @Consumes( { APPLICATION_XML, APPLICATION_JSON } )
-  public String listDataAccessTypes(
-    @DefaultValue( "false" ) @QueryParam( "refreshCache" ) Boolean refreshCache,
-    @Context HttpServletResponse servletResponse, @Context HttpServletRequest servletRequest ) throws Exception {
-    CdaCoreService coreService = getCoreService();
+  public String listDataAccessTypes( @DefaultValue( "false" ) @QueryParam( "refreshCache" ) Boolean refreshCache ) {
+    final CdaCoreService coreService = getCoreService();
+
     return coreService.listDataAccessTypes( refreshCache );
   }
 
@@ -238,56 +314,42 @@ public class RestEndpoint {
     return new CdaCoreService();
   }
 
-  protected void writeOut( OutputStream out, String contents ) throws IOException {
-    IOUtils.write( contents, out, getEncoding() );
-    out.flush();
+  private DoQueryParameters getQueryParameters( String path, String solution, String file ) {
+    return getQueryParameters( path, solution, file, DEFAULT_OUTPUT_TYPE, DEFAULT_DATA_ACCESS_ID );
   }
 
-  public String getResourceAsString( final String path, final HashMap<String, String> tokens ) throws IOException {
-    // Read file
-    IReadAccess repository = getRepositoryAccess();
-    String resourceContents = StringUtils.EMPTY;
-
-    if ( repository.fileExists( path ) ) {
-      resourceContents = Util.toString( repository.getFileInputStream( path ) );
-    } else {
-      return null;
-    }
-
-    // Make replacement of tokens
-    if ( tokens != null ) {
-      for ( final String key : tokens.keySet() ) {
-        resourceContents = StringUtils.replace( resourceContents, key, tokens.get( key ) );
-      }
-    }
-    return resourceContents;
+  private DoQueryParameters getQueryParameters( String path, String solution, String file, String outputType ) {
+    return getQueryParameters( path, solution, file, outputType, DEFAULT_DATA_ACCESS_ID );
   }
 
-  public void getCssResource( final OutputStream out, final String resource ) throws Exception {
-    getResource( out, resource );
+  private DoQueryParameters getQueryParameters( String path, String solution, String file, String outputType,
+                                                String dataAccessId ) {
+    DoQueryParameters queryParameters = new DoQueryParameters( path, solution, file );
+
+    queryParameters.setOutputType( outputType );
+    queryParameters.setDataAccessId( dataAccessId );
+
+    return queryParameters;
   }
 
-  public void getJsResource( final OutputStream out, final String resource ) throws Exception {
-    getResource( out, resource );
-  }
+  private DoQueryParameters getQueryParameters( String path, String solution, String file, String outputType,
+                                                int outputIndexId, String dataAccessId, Boolean bypassCache,
+                                                Boolean paginateQuery, int pageSize, int pageStart,
+                                                Boolean wrapItUp, List<String> sortBy, String jsonCallback ) {
 
-  private void getResource( final OutputStream out, String resource ) throws Exception {
-    IReadAccess repo = getRepositoryAccess();
-    if ( repo.fileExists( resource ) ) {
-      InputStream in = null;
-      try {
-        in = repo.getFileInputStream( resource );
-        IOUtils.copy( in, out );
-        out.flush();
-      } finally {
-        IOUtils.closeQuietly( in );
-      }
+    DoQueryParameters queryParameters = new DoQueryParameters( path, solution, file );
 
-    }
+    queryParameters.setBypassCache( bypassCache );
+    queryParameters.setDataAccessId( dataAccessId );
+    queryParameters.setOutputIndexId( outputIndexId );
+    queryParameters.setOutputType( outputType );
+    queryParameters.setPageSize( pageSize );
+    queryParameters.setPageStart( pageStart );
+    queryParameters.setPaginateQuery( paginateQuery );
+    queryParameters.setSortBy( sortBy );
+    queryParameters.setWrapItUp( wrapItUp );
+    queryParameters.setJsonCallback( jsonCallback );
 
-  }
-
-  private IReadAccess getRepositoryAccess() {
-    return PluginEnvironment.env().getContentAccessFactory().getUserContentAccess( "/" );
+    return queryParameters;
   }
 }
